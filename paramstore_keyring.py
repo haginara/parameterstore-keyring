@@ -12,7 +12,7 @@ import boto3
 import keyring
 from keyring.errors import InitError, PasswordDeleteError
 
-__version__ = '0.0.1'
+__version__ = '0.0.2'
 
 logger = logging.getLogger(__name__)
 
@@ -38,14 +38,18 @@ class ParameterStoreKeyring(keyring.backend.KeyringBackend):
             logger.error("Failed to get ssm client: %s", e)
         return ssm
 
-    def set_password(self, service, username, password):
+    def __make_name(self, service, username):
         if not username:
             name = service
         else:
-            name = '/'.join([service, username])
+            name = '/'+'/'.join([service, username])
+
+        return name
+
+    def set_password(self, service, username, password):
         ssm = self.get_ssm()
         response = ssm.put_parameter(
-            Name=name,
+            Name=self.__make_name(service, username),
             Description='Stored by keyring',
             Value=password,
             Overwrite=True,
@@ -55,17 +59,13 @@ class ParameterStoreKeyring(keyring.backend.KeyringBackend):
         return response
 
     def get_password(self, service, username):
-        if not username:
-            name = service
-        else:
-            name = '/'.join([service, username])
-        logger.info("Name: %s", name)
         ssm=self.get_ssm()
         response = ssm.get_parameter(
-            Name=name,
+            Name=self.__make_name(service, username),
             WithDecryption=True
         )
         return response['Parameter']['Value']
 
     def delete_password(self, service, username):
         pass
+
