@@ -6,13 +6,14 @@ Example
 """
 
 from functools import lru_cache
+import os
 import logging
 
 import boto3
 import keyring
 from keyring.errors import InitError, PasswordDeleteError
 
-__version__ = '0.0.2'
+__version__ = '0.0.3'
 
 logger = logging.getLogger(__name__)
 
@@ -22,12 +23,13 @@ class ParameterStoreKeyring(keyring.backend.KeyringBackend):
 
     prioirity = 0.5
 
-    def __init__(self, profile_name=None, region_name=None):
+    def __init__(self, profile_name=None, region_name=None, key_id=None):
         super(ParameterStoreKeyring, self).__init__()
         if region_name is None:
             raise Exception("region_name does not set")
         self._profile_name = profile_name
         self._region_name = region_name
+        self.__key_id = os.environ.get('AWS_PARAMETER_STORE_KEY_ID', key_id)
 
     @lru_cache(maxsize=1)
     def get_ssm(self):
@@ -48,17 +50,22 @@ class ParameterStoreKeyring(keyring.backend.KeyringBackend):
 
     def set_password(self, service, username, password):
         ssm = self.get_ssm()
-        response = ssm.put_parameter(
-            Name=self.__make_name(service, username),
-            Description='Stored by keyring',
-            Value=password,
-            Overwrite=True,
-            Type='SecureString',
-            #KeyId=""
-        )
+        params = {
+            "Name": self.__make_name(service, username),
+            "Description": 'Stored by keyring',
+            "Value": password,
+            "Overwrite": True,
+            "Type": 'SecureString',
+        }
+        if self.__key_id:
+            params["KeyId"] = self.__key_id
+        response = ssm.put_parameter(**params)
         return response
 
     def get_password(self, service, username):
+        """
+        Get the password in AWS Parameter store
+        """
         ssm=self.get_ssm()
         response = ssm.get_parameter(
             Name=self.__make_name(service, username),
@@ -67,5 +74,12 @@ class ParameterStoreKeyring(keyring.backend.KeyringBackend):
         return response['Parameter']['Value']
 
     def delete_password(self, service, username):
-        pass
+        """
+        Delete the password in AWS Parameter Store
+        """
+        ssm = self.get_ssm()
+        response = ssm.delete_parameter(
+            Name=self.__make_name(service, username)
+        )
+        return response
 
